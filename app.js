@@ -124,5 +124,3 @@ app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
 
-
-store.similar({id: 1093525667}).then(console.log).catch(console.log);
