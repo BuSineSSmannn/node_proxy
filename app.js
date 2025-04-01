@@ -47,9 +47,8 @@ app.post('/suggestions', async (req, res) => {
 
 app.post('/search-position', async (req, res) => {
     try {
-        const { keyword, appId, country, num = 1000, page = 1 } = req.body;
+        const { keyword, app_id, country, num = 1000, page = 1 } = req.body;
 
-        // Проверка обязательных параметров
         if (!keyword || keyword.trim() === '') {
             return res.status(400).json({
                 error: 'Missing parameter',
@@ -64,17 +63,15 @@ app.post('/search-position', async (req, res) => {
             });
         }
 
-        if (!appId) {
+        if (!app_id) {
             return res.status(400).json({
                 error: 'Missing parameter',
                 message: 'AppId is required in request body'
             });
         }
 
-        // Нормализация appId к числовому типу
-        const targetAppId = parseInt(appId);
+        const targetAppId = parseInt(app_id);
 
-        // Выполняем поиск по ключевому слову
         const searchResults = await store.search({
             term: keyword,
             num: num,
@@ -82,11 +79,9 @@ app.post('/search-position', async (req, res) => {
             country: country
         });
 
-        // Найдем позицию приложения в результатах
         const appPosition = searchResults.findIndex(app => app.id === targetAppId);
 
         if (appPosition !== -1) {
-            // Приложение найдено
             const position = (page - 1) * num + appPosition + 1;
             const appInfo = searchResults[appPosition];
 
@@ -101,7 +96,6 @@ app.post('/search-position', async (req, res) => {
                 totalResults: searchResults.length
             });
         } else {
-            // Приложение не найдено на текущей странице
             return res.json({
                 found: false,
                 keyword: keyword,
@@ -118,6 +112,7 @@ app.post('/search-position', async (req, res) => {
             stack: error.stack
         });
     }
+
 });
 
 app.listen(port, () => {
