@@ -76,7 +76,22 @@ app.post('/search-position', async (req, res) => {
             term: keyword,
             num: num,
             page: page,
-            country: country
+            country: country,
+        });
+
+        const modifiedSearchResults = searchResults.map(app => {
+            const {
+                supportedDevices,
+                developerId,
+                price,
+                currency,
+                free,
+                size,
+                genreIds,
+                description,
+                ...rest
+            } = app;
+            return rest;
         });
 
         const appPosition = searchResults.findIndex(app => app.id === targetAppId);
@@ -93,7 +108,8 @@ app.post('/search-position', async (req, res) => {
                 appName: appInfo.title,
                 developer: appInfo.developer,
                 appInfo: appInfo,
-                totalResults: searchResults.length
+                totalResults: searchResults.length,
+                searchResults: modifiedSearchResults
             });
         } else {
             return res.json({
@@ -101,7 +117,8 @@ app.post('/search-position', async (req, res) => {
                 keyword: keyword,
                 appId: targetAppId,
                 message: `App with ID ${targetAppId} not found in the search results for keyword "${keyword}" on page ${page}`,
-                totalResults: searchResults.length
+                totalResults: searchResults.length,
+                searchResults: modifiedSearchResults
             });
         }
     } catch (error) {
@@ -114,6 +131,40 @@ app.post('/search-position', async (req, res) => {
     }
 
 });
+
+
+app.post('/search-app', async (req, res) => {
+    try {
+        const { app_id } = req.body;
+
+        if (!app_id) {
+            return res.status(400).json({
+                error: 'Missing parameter',
+                message: 'AppId is required in request body'
+            });
+        }
+
+        const targetAppId = parseInt(app_id);
+
+        const searchResults = await store.app({
+            id: targetAppId,
+        });
+
+
+        res.json({
+            searchResults
+        })
+    } catch (error) {
+        console.log(req.response)
+        res.status(500).json({
+            error: 'Internal Server Error',
+            message: error.message,
+            stack: error.stack
+        });
+    }
+
+});
+
 
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
