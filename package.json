@@ -11,6 +11,7 @@
   "description": "",
   "dependencies": {
     "app-store-scraper": "^0.18.0",
+    "bottleneck": "^2.19.5",
     "cors": "^2.8.5",
     "express": "^4.21.2"
   }

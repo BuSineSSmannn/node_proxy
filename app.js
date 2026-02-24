@@ -1,10 +1,16 @@
 const express = require('express');
 const store = require('app-store-scraper');
 const cors = require('cors');
+const Bottleneck = require('bottleneck');
 
 const app = express();
 const port = 3000;
 
+// Throttle outgoing requests to Apple iTunes API: 18 req/min (safe margin under 20 limit)
+const limiter = new Bottleneck({
+    maxConcurrent: 1,
+    minTime: Math.ceil(60000 / 18), // ~3333ms between requests
+});
 
 app.use((req, res, next) => {
     const originalJson = res.json;
@@ -45,9 +51,15 @@ app.post('/suggestions', async (req, res) => {
     }
 });
 
+/**
+ * Search position via official iTunes Search API
+ * https://itunes.apple.com/search?term=...&country=...&entity=software&limit=200
+ *
+ * Throttled to 18 req/min via Bottleneck to respect Apple rate limits.
+ */
 app.post('/search-position', async (req, res) => {
     try {
-        const { keyword, app_id, country, num = 1000, page = 1 } = req.body;
+        const { keyword, app_id, country } = req.body;
 
         if (!keyword || keyword.trim() === '') {
             return res.status(400).json({
@@ -72,64 +84,42 @@ app.post('/search-position', async (req, res) => {
 
         const targetAppId = parseInt(app_id);
 
-        const searchResults = await store.search({
-            term: keyword,
-            num: num,
-            page: page,
-            country: country,
-        });
-
-        const modifiedSearchResults = searchResults.map(app => {
-            const {
-                supportedDevices,
-                developerId,
-                price,
-                currency,
-                free,
-                size,
-                genreIds,
-                description,
-                ...rest
-            } = app;
-            return rest;
-        });
+        // Throttled call to iTunes Search API
+        const searchResults = await limiter.schedule(() => itunesSearch(keyword, country));
 
         const appPosition = searchResults.findIndex(app => app.id === targetAppId);
 
         if (appPosition !== -1) {
-            const position = (page - 1) * num + appPosition + 1;
             const appInfo = searchResults[appPosition];
 
             return res.json({
                 found: true,
-                position: position,
+                position: appPosition + 1,
                 keyword: keyword,
                 appId: targetAppId,
                 appName: appInfo.title,
                 developer: appInfo.developer,
                 appInfo: appInfo,
                 totalResults: searchResults.length,
-                searchResults: modifiedSearchResults
+                searchResults: searchResults
             });
         } else {
             return res.json({
                 found: false,
                 keyword: keyword,
                 appId: targetAppId,
-                message: `App with ID ${targetAppId} not found in the search results for keyword "${keyword}" on page ${page}`,
+                message: `App with ID ${targetAppId} not found in the search results for keyword "${keyword}"`,
                 totalResults: searchResults.length,
-                searchResults: modifiedSearchResults
+                searchResults: searchResults
             });
         }
     } catch (error) {
-        console.log(req.response)
+        console.error('search-position error:', error.message);
         res.status(500).json({
             error: 'Internal Server Error',
             message: error.message,
-            stack: error.stack
         });
     }
-
 });
 
 
@@ -155,18 +145,59 @@ app.post('/search-app', async (req, res) => {
             searchResults
         })
     } catch (error) {
-        console.log(req.response)
+        console.error('search-app error:', error.message);
         res.status(500).json({
             error: 'Internal Server Error',
             message: error.message,
-            stack: error.stack
         });
     }
 
 });
 
+/**
+ * Fetch search results from official iTunes Search API.
+ * Returns array of apps mapped to match the previous response format.
+ */
+async function itunesSearch(keyword, country) {
+    const url = `https://itunes.apple.com/search?term=${encodeURIComponent(keyword)}&country=${encodeURIComponent(country)}&entity=software&limit=200`;
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+        throw new Error(`iTunes API returned ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    return (data.results || []).map(app => ({
+        id: app.trackId,
+        appId: app.bundleId,
+        title: app.trackName,
+        url: app.trackViewUrl,
+        icon: app.artworkUrl512 || app.artworkUrl100 || app.artworkUrl60,
+        genres: app.genres,
+        primaryGenre: app.primaryGenreName,
+        primaryGenreId: app.primaryGenreId,
+        contentRating: app.contentAdvisoryRating,
+        languages: app.languageCodesISO2A,
+        requiredOsVersion: app.minimumOsVersion,
+        released: app.releaseDate,
+        updated: app.currentVersionReleaseDate || app.releaseDate,
+        releaseNotes: app.releaseNotes,
+        version: app.version,
+        developer: app.artistName,
+        developerUrl: app.artistViewUrl,
+        developerWebsite: app.sellerUrl,
+        score: app.averageUserRating,
+        reviews: app.userRatingCount,
+        currentVersionScore: app.averageUserRatingForCurrentVersion,
+        currentVersionReviews: app.userRatingCountForCurrentVersion,
+        screenshots: app.screenshotUrls,
+        ipadScreenshots: app.ipadScreenshotUrls,
+        appletvScreenshots: app.appletvScreenshotUrls,
+    }));
+}
 
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
-
