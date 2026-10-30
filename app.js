@@ -84,6 +84,10 @@ app.post('/search-position', async (req, res) => {
 
         const targetAppId = parseInt(app_id);
 
+        // compact: true -> answer without appInfo / searchResults (~1 KB instead of ~0.5 MB).
+        // Without the flag the answer is unchanged.
+        const compact = req.body.compact === true;
+
         // Throttled call to iTunes Search API
         const searchResults = await limiter.schedule(() => itunesSearch(keyword, country));
 
@@ -99,9 +103,9 @@ app.post('/search-position', async (req, res) => {
                 appId: targetAppId,
                 appName: appInfo.title,
                 developer: appInfo.developer,
-                appInfo: appInfo,
+                ...(compact ? {} : { appInfo: appInfo }),
                 totalResults: searchResults.length,
-                searchResults: searchResults
+                ...(compact ? {} : { searchResults: searchResults })
             });
         } else {
             return res.json({
@@ -110,7 +114,7 @@ app.post('/search-position', async (req, res) => {
                 appId: targetAppId,
                 message: `App with ID ${targetAppId} not found in the search results for keyword "${keyword}"`,
                 totalResults: searchResults.length,
-                searchResults: searchResults
+                ...(compact ? {} : { searchResults: searchResults })
             });
         }
     } catch (error) {
